@@ -24,8 +24,6 @@ namespace EchoXIV
     /// </summary>
     public sealed class Plugin : IDalamudPlugin
     {
-        public string Name => "EchoXIV";
-        
         private const string CommandName = "/translate";
         private const string CommandNameShort = "/tl";
         private const string ConfigCommandName = "/echoxiv";
@@ -155,6 +153,7 @@ namespace EchoXIV
                 // Registrar WindowSystem
                 PluginInterface.UiBuilder.Draw += DrawUi;
                 PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUI;
+                PluginInterface.LanguageChanged += OnLanguageChanged;
                 
                 // Registrar comandos
                 CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
@@ -221,12 +220,15 @@ namespace EchoXIV
 
         private void DrawUi()
         {
+            _windowSystem.Draw();
+        }
+
+        private void OnLanguageChanged(string langCode)
+        {
             if (ApplyResourceCulture())
             {
                 RefreshLocalizedWindows();
             }
-
-            _windowSystem.Draw();
         }
 
         private bool ApplyResourceCulture()
@@ -386,6 +388,7 @@ namespace EchoXIV
             {
                 PluginInterface.UiBuilder.Draw -= DrawUi;
             }
+            PluginInterface.LanguageChanged -= OnLanguageChanged;
             PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUI;
             PluginInterface.UiBuilder.OpenMainUi -= ToggleConfigUI;
             ClientState.Login -= OnClientLogin;

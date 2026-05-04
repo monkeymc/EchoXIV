@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Game.Chat;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Plugin.Services;
@@ -159,10 +160,11 @@ namespace EchoXIV
             return null;
         }
 
-        private void OnChatMessage(XivChatType type, int timestamp, ref SeString sender, ref SeString message, ref bool isHandled)
+        private void OnChatMessage(IHandleableChatMessage message)
         {
+            var type = message.LogKind;
             // Obtener texto del mensaje
-            var messageText = message.TextValue;
+            var messageText = message.Message.TextValue;
 
             string? originalFromPending = GetOriginalFromPending(messageText, true);
 
@@ -178,7 +180,7 @@ namespace EchoXIV
                     return;
             }
 
-            var senderName = sender.TextValue;
+            var senderName = message.Sender.TextValue;
 
             // Formatear nombre: Nombre Apellido@Servidor
             var localPlayerName = _playerState.CharacterName.ToString();

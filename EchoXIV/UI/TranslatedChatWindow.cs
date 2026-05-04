@@ -284,11 +284,8 @@ namespace EchoXIV.UI
                 if (ImGui.IsItemHovered())
                 {
                     using var tooltip = ImRaii.Tooltip();
-                    if (tooltip)
-                    {
-                        ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), Resources.ChatWindow_Original);
-                        ImGui.TextUnformatted(message.OriginalText);
-                    }
+                    ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), Resources.ChatWindow_Original);
+                    ImGui.TextUnformatted(message.OriginalText);
                 }
             }
         }

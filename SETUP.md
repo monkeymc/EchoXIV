@@ -24,27 +24,17 @@ Archivos requeridos:
 Abre una terminal en la carpeta del proyecto y ejecuta:
 
 ```powershell
-# Entrar en la carpeta del código
-cd EchoXIV
-
-# Limpiar y compilar
 dotnet clean
 dotnet build -c Release
 ```
 
-## 📦 Paso 3: Instalación Automática
+## 📦 Paso 3: Instalación Manual
 
-El proyecto incluye un script de PowerShell para facilitar la instalación:
+Una vez compilado, debes copiar los archivos a la carpeta de plugins de Dalamud:
 
-```powershell
-.\install-plugin.ps1
-```
-
-Este script se encargará de:
-
-1. Compilar el proyecto en modo Release.
-2. Crear la carpeta `%AppData%\XIVLauncher\devPlugins\EchoXIV`.
-3. Copiar todos los archivos necesarios (DLL, JSON, Recursos).
+1. Crea la carpeta `%AppData%\XIVLauncher\devPlugins\EchoXIV` si no existe.
+2. Copia el contenido de `EchoXIV/bin/Release/` a esa carpeta.
+   - Asegúrate de incluir `EchoXIV.dll`, `EchoXIV.json` y la carpeta `images`.
 
 ## 🎮 Paso 4: Configuración en el Juego
 
