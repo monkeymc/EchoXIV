@@ -72,6 +72,77 @@ namespace EchoXIV.GameFunctions
             }
         }
         
+        private (string? prefix, string message) ParseChannelPrefix(string text)
+        {
+            var trimmed = text.Trim();
+            if (!trimmed.StartsWith("/")) return (null, text);
+
+            var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"^(/[a-z0-9]+)\s*(.*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!match.Success) return (null, text);
+
+            var command = match.Groups[1].Value.ToLower();
+            var remaining = match.Groups[2].Value.Trim();
+
+            var chatCommands = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "/p", "/party",
+                "/fc", "/freecompany",
+                "/sh", "/shout",
+                "/y", "/yell",
+                "/s", "/say",
+                "/a", "/alliance",
+                "/e", "/echo",
+                "/r", "/reply",
+                "/l1", "/l2", "/l3", "/l4", "/l5", "/l6", "/l7", "/l8",
+                "/linkshell1", "/linkshell2", "/linkshell3", "/linkshell4", "/linkshell5", "/linkshell6", "/linkshell7", "/linkshell8",
+                "/cwl1", "/cwl2", "/cwl3", "/cwl4", "/cwl5", "/cwl6", "/cwl7", "/cwl8",
+                "/cwlinkshell1", "/cwlinkshell2", "/cwlinkshell3", "/cwlinkshell4", "/cwlinkshell5", "/cwlinkshell6", "/cwlinkshell7", "/cwlinkshell8"
+            };
+
+            if (chatCommands.Contains(command))
+            {
+                return (command, remaining);
+            }
+
+            if (command == "/t" || command == "/tell")
+            {
+                if (remaining.StartsWith("\""))
+                {
+                    var endQuoteIndex = remaining.IndexOf("\"", 1);
+                    if (endQuoteIndex != -1)
+                    {
+                        var recipient = remaining.Substring(1, endQuoteIndex - 1);
+                        var msg = remaining.Substring(endQuoteIndex + 1).Trim();
+                        return ($"{command} \"{recipient}\"", msg);
+                    }
+                }
+                
+                var parts = remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2)
+                {
+                    if (parts[0].Contains("@"))
+                    {
+                        var recipient = parts[0];
+                        var msg = string.Join(" ", parts.Skip(1));
+                        return ($"{command} {recipient}", msg);
+                    }
+                    
+                    if (parts.Length >= 3)
+                    {
+                        var recipient = $"{parts[0]} {parts[1]}";
+                        var msg = string.Join(" ", parts.Skip(2));
+                        return ($"{command} {recipient}", msg);
+                    }
+                    
+                    var fallbackRecipient = parts[0];
+                    var fallbackMsg = string.Join(" ", parts.Skip(1));
+                    return ($"{command} {fallbackRecipient}", fallbackMsg);
+                }
+            }
+
+            return (null, text);
+        }
+
         /// <summary>
         /// Detour: intercepta mensajes ANTES de procesarlos.
         /// </summary>
@@ -87,30 +158,45 @@ namespace EchoXIV.GameFunctions
                 }
                 
                 var originalText = message->ToString();
+                if (string.IsNullOrWhiteSpace(originalText))
+                {
+                    _processChatBoxHook!.Original(uiModule, message, a4, saveToHistory);
+                    return;
+                }
+
+                // Intentar detectar si tiene prefijo de canal de chat (ej: /fc hello)
+                var (prefix, messageText) = ParseChannelPrefix(originalText);
+
+                // Si empieza con "/" pero no es un canal de chat (es un macro, comando de juego, etc.), pasar directo
+                if (originalText.StartsWith("/") && prefix == null)
+                {
+                    _processChatBoxHook!.Original(uiModule, message, a4, saveToHistory);
+                    return;
+                }
                 
-                // 1. BYPASS: Si es un comando, está vacío o es un mensaje que ya tradujimos nosotros (/tl)
-                // Usamos remove:false porque IncomingMessageHandler lo eliminará cuando llegue el mensaje al chat real.
-                if (string.IsNullOrWhiteSpace(originalText) || originalText.StartsWith("/") || 
-                    _configuration.ExcludedMessages.Contains(originalText) ||
+                // 1. BYPASS: Si está vacío, excluido o ya es un mensaje que ya tradujimos nosotros
+                if (string.IsNullOrWhiteSpace(messageText) || 
+                    _configuration.ExcludedMessages.Contains(messageText) ||
                     _incomingMessageHandler.IsPendingOutgoing(originalText, false))
                 {
                     _processChatBoxHook!.Original(uiModule, message, a4, saveToHistory);
                     return;
                 }
                 
-                if (_configuration.VerboseLogging) _pluginLog.Info($"Hook intercepted message for translation: '{originalText}'");
+                if (_configuration.VerboseLogging) _pluginLog.Info($"Hook intercepted message for translation: '{messageText}' (Prefix: '{prefix}')");
                 
                 // 2. Verificar caché persistente (Rápido)
-                var cached = _translationCache.Get(originalText, _configuration.SourceLanguage, _configuration.TargetLanguage);
+                var cached = _translationCache.Get(messageText, _configuration.SourceLanguage, _configuration.TargetLanguage);
                 if (cached != null)
                 {
-                    _incomingMessageHandler.RegisterPendingOutgoing(cached, originalText);
-                    SendTranslated(uiModule, cached, a4, saveToHistory);
+                    var finalText = prefix != null ? $"{prefix} {cached}" : cached;
+                    _incomingMessageHandler.RegisterPendingOutgoing(finalText, originalText);
+                    SendTranslated(uiModule, finalText, a4, saveToHistory);
                     return;
                 }
 
                 // 3. TRADUCCIÓN ASÍNCRONA (Sin congelar el juego)
-                ProcessAsync(uiModule, originalText, a4, saveToHistory);
+                ProcessAsync(uiModule, prefix, messageText, a4, saveToHistory);
             }
             catch (Exception ex)
             {
@@ -119,13 +205,14 @@ namespace EchoXIV.GameFunctions
             }
         }
 
-        private void ProcessAsync(UIModule* uiModule, string originalText, nint a4, bool saveToHistory)
+        private void ProcessAsync(UIModule* uiModule, string? prefix, string messageText, nint a4, bool saveToHistory)
         {
             // Capturar lo necesario para el callback
             var context = new TranslationContext 
             { 
                 UiModule = (nint)uiModule, 
-                OriginalText = originalText, 
+                Prefix = prefix,
+                OriginalText = messageText, 
                 A4 = a4, 
                 SaveToHistory = saveToHistory 
             };
@@ -144,11 +231,13 @@ namespace EchoXIV.GameFunctions
                     {
                         if (translated != null)
                         {
-                            SendTranslated((UIModule*)ctx.UiModule, translated, ctx.A4, ctx.SaveToHistory);
+                            var finalText = ctx.Prefix != null ? $"{ctx.Prefix} {translated}" : translated;
+                            SendTranslated((UIModule*)ctx.UiModule, finalText, ctx.A4, ctx.SaveToHistory);
                         }
                         else
                         {
-                            var originalUtf8 = Utf8String.FromString(ctx.OriginalText);
+                            var originalFull = ctx.Prefix != null ? $"{ctx.Prefix} {ctx.OriginalText}" : ctx.OriginalText;
+                            var originalUtf8 = Utf8String.FromString(originalFull);
                             try {
                                 _processChatBoxHook!.Original((UIModule*)ctx.UiModule, originalUtf8, ctx.A4, ctx.SaveToHistory);
                             } finally {
@@ -208,6 +297,7 @@ namespace EchoXIV.GameFunctions
     internal class TranslationContext
     {
         public nint UiModule { get; set; }
+        public string? Prefix { get; set; }
         public string OriginalText { get; set; } = string.Empty;
         public nint A4 { get; set; }
         public bool SaveToHistory { get; set; }
@@ -243,7 +333,9 @@ namespace EchoXIV.GameFunctions
                     if (!string.IsNullOrEmpty(translatedText) && translatedText != context.OriginalText)
                     {
                         cache.Add(context.OriginalText, config.SourceLanguage, config.TargetLanguage, translatedText);
-                        handler.RegisterPendingOutgoing(translatedText, context.OriginalText);
+                        var fullTranslated = context.Prefix != null ? $"{context.Prefix} {translatedText}" : translatedText;
+                        var fullOriginal = context.Prefix != null ? $"{context.Prefix} {context.OriginalText}" : context.OriginalText;
+                        handler.RegisterPendingOutgoing(fullTranslated, fullOriginal);
                         callback(context, translatedText);
                     }
                     else

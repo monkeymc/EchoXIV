@@ -24,7 +24,9 @@ namespace EchoXIV
         public string TranslatedText { get; set; } = string.Empty;
         public string Recipient { get; set; } = string.Empty; // Destinatario (para Tells)
         public bool IsTranslating { get; set; }
+        public bool IsOutgoing { get; set; }
         public Guid Id { get; set; } = Guid.NewGuid();
+        public string EngineName { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -211,18 +213,6 @@ namespace EchoXIV
                  
                  // Buscar una mayúscula que no sea la primera letra del apellido
                  // y comparar con el HomeWorld del jugador local si es posible
-                 
-                 // Si es el mismo mundo que nosotros, agregar nuestro mundo
-                 if (!string.IsNullOrEmpty(localPlayerWorldName) && localPlayerName == senderName)
-                 {
-                     senderName = $"{senderName}{worldIcon}{localPlayerWorldName}";
-                 }
-                 else if (!string.IsNullOrEmpty(localPlayerWorldName))
-                 {
-                     // Lógica heurística simplificada
-                     // Asumimos mismo mundo si no hay indicador de otro mundo.
-                     senderName = $"{senderName}{worldIcon}{localPlayerWorldName}";
-                 }
 
                  for (int i = 1; i < lastPart.Length; i++)
                  {
@@ -254,8 +244,8 @@ namespace EchoXIV
             if (string.IsNullOrWhiteSpace(messageText))
                 return;
 
-            // Verificar si es del jugador local
-            var isLocalPlayer = !string.IsNullOrEmpty(localPlayerName) && (senderName.StartsWith(localPlayerName));
+            // Verificar si es del jugador local (usamos Contains para canales que anteponen números/símbolos como Party o Alliance)
+            var isLocalPlayer = !string.IsNullOrEmpty(localPlayerName) && senderName.Contains(localPlayerName, StringComparison.OrdinalIgnoreCase);
             
             // Si es un mensaje del jugador local y no queremos mostrar nuestros propios mensajes,
             // LO DESCARTAMOS AQUÍ MISMO a menos que sea una traducción explícita
@@ -276,7 +266,8 @@ namespace EchoXIV
                     Sender = senderName,
                     OriginalText = messageText, // La traducción que el juego captó
                     TranslatedText = originalFromPending, // El original que guardamos
-                    IsTranslating = false
+                    IsTranslating = false,
+                    IsOutgoing = true
                 };
                 
                 // Efectivamente, el UI debe saber que esto es saliente para mostrarlo al revés
@@ -325,7 +316,8 @@ namespace EchoXIV
                 Sender = senderName,
                 OriginalText = messageText,
                 TranslatedText = string.Empty,
-                IsTranslating = true
+                IsTranslating = true,
+                IsOutgoing = isLocalPlayer
             };
 
             OnTranslationStarted?.Invoke(translatedMessage);
@@ -342,22 +334,40 @@ namespace EchoXIV
             await TranslateAsync(message);
         }
 
+        private string GetActualEngineName(ITranslationService service, string targetLang)
+        {
+            if (service == null) return "Unknown";
+            if (service.Name == "Auto")
+            {
+                if (!string.IsNullOrWhiteSpace(_configuration.GeminiApiKey))
+                {
+                    return "Gemini";
+                }
+                var cleanLang = targetLang.Split('-')[0].ToLowerInvariant();
+                var papagoPreferred = new HashSet<string> { "ja", "ko", "zh", "th" };
+                return papagoPreferred.Contains(cleanLang) ? "Papago" : "Google";
+            }
+            return service.Name;
+        }
+
         private async Task TranslateAsync(TranslatedChatMessage message)
         {
             try
             {
                 // 1. Verificar Caché
                 var targetLanguage = _configuration.GetReadingLanguage();
-
+ 
                 var cached = _translationCache.Get(message.OriginalText, "auto", targetLanguage);
                 if (cached != null)
                 {
                     message.TranslatedText = cached;
                     message.IsTranslating = false;
+                    message.EngineName = GetActualEngineName(_primaryTranslator, targetLanguage);
+                    PrintToLocalChat(message);
                     OnMessageTranslated?.Invoke(message);
                     return;
                 }
-
+ 
                 // 2. Proteger términos con Glossary
                 var protectedText = _glossaryService.Protect(message.OriginalText);
                 
@@ -369,17 +379,22 @@ namespace EchoXIV
                     targetLanguage,
                     primaryTimeout.Token
                 );
-
+ 
                 // 4. Restaurar términos y guardar en caché
                 var finalTranslation = SanitizeText(_glossaryService.Restore(translation));
                 
-                _translationCache.Add(message.OriginalText, "auto", targetLanguage, finalTranslation);
-
+                if (!string.Equals(message.OriginalText, finalTranslation, StringComparison.OrdinalIgnoreCase))
+                {
+                    _translationCache.Add(message.OriginalText, "auto", targetLanguage, finalTranslation);
+                }
+ 
                 message.TranslatedText = finalTranslation;
                 message.IsTranslating = false;
-
+                message.EngineName = GetActualEngineName(_primaryTranslator, targetLanguage);
+ 
                 if (_configuration.VerboseLogging) _pluginLog.Info($"[{message.ChatType}] Incoming translated: '{message.OriginalText}' -> '{message.TranslatedText}'");
-
+ 
+                PrintToLocalChat(message);
                 // Notificar que la traducción está lista
                 OnMessageTranslated?.Invoke(message);
             }
@@ -400,14 +415,19 @@ namespace EchoXIV
                     {
                         var protectedText = _glossaryService.Protect(message.OriginalText);
                         var targetLanguage = _configuration.GetReadingLanguage();
-
+ 
                         using var secondaryTimeout = TranslationDefaults.CreateTimeoutTokenSource();
                         var translation = await _secondaryTranslator.TranslateAsync(protectedText, "auto", targetLanguage, secondaryTimeout.Token);
                         var finalTranslation = SanitizeText(_glossaryService.Restore(translation));
                         
-                        _translationCache.Add(message.OriginalText, "auto", targetLanguage, finalTranslation);
+                        if (!string.Equals(message.OriginalText, finalTranslation, StringComparison.OrdinalIgnoreCase))
+                 {
+                     _translationCache.Add(message.OriginalText, "auto", targetLanguage, finalTranslation);
+                 }
                         message.TranslatedText = finalTranslation;
                         message.IsTranslating = false;
+                        message.EngineName = GetActualEngineName(_secondaryTranslator, targetLanguage);
+                        PrintToLocalChat(message);
                         OnMessageTranslated?.Invoke(message);
                         
                         // Si funcionó, pedir cambio permanente de motor
@@ -423,7 +443,7 @@ namespace EchoXIV
                 {
                     _pluginLog.Error(secondaryEx, "Error in secondary translator during failover.");
                 }
-
+ 
                 message.TranslatedText = message.OriginalText; // Fallback final
                 message.IsTranslating = false;
                 OnMessageTranslated?.Invoke(message);
@@ -491,6 +511,17 @@ namespace EchoXIV
             {
                 _pendingOutgoingTranslations.Remove(key);
             }
+        }
+
+        private void PrintToLocalChat(TranslatedChatMessage message)
+        {
+            if (message == null || string.IsNullOrEmpty(message.TranslatedText)) return;
+            if (!_configuration.PrintIncomingToChat) return;
+            if (message.IsOutgoing) return;
+            if (message.TranslatedText.Equals(message.OriginalText, StringComparison.OrdinalIgnoreCase)) return;
+
+            var engineTag = !string.IsNullOrEmpty(message.EngineName) ? message.EngineName : "แปล";
+            _chatGui.Print($"[{engineTag}] {message.Sender}: {message.TranslatedText}");
         }
 
         private string SanitizeText(string text)

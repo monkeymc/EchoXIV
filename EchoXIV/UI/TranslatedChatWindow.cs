@@ -286,6 +286,10 @@ namespace EchoXIV.UI
                     using var tooltip = ImRaii.Tooltip();
                     ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), Resources.ChatWindow_Original);
                     ImGui.TextUnformatted(message.OriginalText);
+                    if (!string.IsNullOrEmpty(message.EngineName))
+                    {
+                        ImGui.TextColored(new Vector4(0.4f, 0.7f, 1.0f, 1.0f), $"Engine: {message.EngineName}");
+                    }
                 }
             }
         }

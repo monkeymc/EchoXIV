@@ -425,6 +425,9 @@
     <data name="Lang_IT">
         <value>Italian</value>
     </data>
+    <data name="Lang_TH">
+        <value>Thai</value>
+    </data>
     <data name="Channel_Say">
         <value>Say</value>
     </data>

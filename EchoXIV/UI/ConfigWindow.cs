@@ -99,10 +99,60 @@ public class ConfigWindow : Window, IDisposable
                 }
             }
 
-            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), 
-                _configuration.SelectedEngine == TranslationEngine.Google 
-                ? Resources.General_EngineGoogleDesc 
-                : Resources.General_EnginePapagoDesc);
+            string engineDesc;
+            switch (_configuration.SelectedEngine)
+            {
+                case TranslationEngine.Auto:
+                    engineDesc = Resources.ResourceManager.GetString("General_EngineAutoDesc", Resources.Culture) 
+                        ?? "Auto: Dynamic engine switching based on target language (Papago for CJK/TH, Google for others).";
+                    break;
+                case TranslationEngine.Google:
+                    engineDesc = Resources.General_EngineGoogleDesc;
+                    break;
+                case TranslationEngine.Papago:
+                    engineDesc = Resources.General_EnginePapagoDesc;
+                    break;
+                case TranslationEngine.Gemini:
+                    engineDesc = "Gemini: Advanced translation using Google's Gemini 1.5 Flash. Highly natural and handles gaming abbreviations excellently. Requires a free API Key.";
+                    break;
+                default:
+                    engineDesc = Resources.General_EnginePapagoDesc;
+                    break;
+            }
+            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), engineDesc);
+
+            ImGui.Spacing();
+            ImGui.Text("Gemini API Key:");
+            ImGui.SetNextItemWidth(350);
+            var apiKey = _configuration.GeminiApiKey;
+            if (ImGui.InputText("##GeminiApiKey", ref apiKey, 200, ImGuiInputTextFlags.Password))
+            {
+                _configuration.GeminiApiKey = apiKey.Trim();
+                _configuration.Save();
+            }
+            
+            ImGui.SameLine();
+            if (ImGui.Button("Get API Key"))
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "https://aistudio.google.com/",
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception)
+                {
+                    // Fallback log in case ProcessStart fails
+                }
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Click to open Google AI Studio in your browser and create a free API Key (requires no credit card).");
+            }
+
+            ImGui.TextColored(new Vector4(0.4f, 0.8f, 0.4f, 1.0f), "Get a free API Key at Google AI Studio. No credit card required.");
 
             ImGui.Spacing();
             ImGui.Separator();
@@ -112,11 +162,12 @@ public class ConfigWindow : Window, IDisposable
             ImGui.Text(Resources.General_SourceLanguage);
             ImGui.SetNextItemWidth(200);
             
-            var languages = new[] { "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW" };
+            var languages = new[] { "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW", "th" };
             var languageNames = new[] { 
                 Resources.Lang_ES, Resources.Lang_EN, Resources.Lang_JA, Resources.Lang_FR, 
                 Resources.Lang_DE, Resources.Lang_IT, Resources.Lang_KO, Resources.Lang_NO,
-                Resources.Lang_PT, Resources.Lang_RU, Resources.Lang_ZH_Simp, Resources.Lang_ZH_Trad
+                Resources.Lang_PT, Resources.Lang_RU, Resources.Lang_ZH_Simp, Resources.Lang_ZH_Trad,
+                Resources.Lang_TH
             };
             
             var currentSourceIdx = Array.IndexOf(languages, _configuration.SourceLanguage);
@@ -130,16 +181,23 @@ public class ConfigWindow : Window, IDisposable
             
             ImGui.Spacing();
             
-            // Selector de idioma de destino
+            // Selector de idioma de destino (excluyendo tailandés ya que el juego no lo soporta de forma nativa)
             ImGui.Text(Resources.General_TargetLanguage);
             ImGui.SetNextItemWidth(200);
             
-            var currentTargetIdx = Array.IndexOf(languages, _configuration.TargetLanguage);
+            var targetLanguages = new[] { "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW" };
+            var targetLanguageNames = new[] { 
+                Resources.Lang_ES, Resources.Lang_EN, Resources.Lang_JA, Resources.Lang_FR, 
+                Resources.Lang_DE, Resources.Lang_IT, Resources.Lang_KO, Resources.Lang_NO,
+                Resources.Lang_PT, Resources.Lang_RU, Resources.Lang_ZH_Simp, Resources.Lang_ZH_Trad
+            };
+            
+            var currentTargetIdx = Array.IndexOf(targetLanguages, _configuration.TargetLanguage);
             if (currentTargetIdx == -1) currentTargetIdx = 1;
             
-            if (ImGui.Combo("##TargetLang", ref currentTargetIdx, languageNames, languageNames.Length))
+            if (ImGui.Combo("##TargetLang", ref currentTargetIdx, targetLanguageNames, targetLanguageNames.Length))
             {
-                _configuration.TargetLanguage = languages[currentTargetIdx];
+                _configuration.TargetLanguage = targetLanguages[currentTargetIdx];
                 _configuration.Save();
             }
             
@@ -454,12 +512,12 @@ public class ConfigWindow : Window, IDisposable
         ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), Resources.Incoming_AutoDetectNote);
         ImGui.SetNextItemWidth(200);
         
-        var languages = new[] { "", "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW" };
+        var languages = new[] { "", "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW", "th" };
         var languageNames = new[] { 
             Resources.Incoming_UseWritingLanguage, Resources.Lang_ES, Resources.Lang_EN, Resources.Lang_JA, 
             Resources.Lang_FR, Resources.Lang_DE, Resources.Lang_IT, Resources.Lang_KO,
             Resources.Lang_NO, Resources.Lang_PT, Resources.Lang_RU, Resources.Lang_ZH_Simp,
-            Resources.Lang_ZH_Trad
+            Resources.Lang_ZH_Trad, Resources.Lang_TH
         };
         
         var currentIdx = Array.IndexOf(languages, _configuration.IncomingTargetLanguage);
@@ -504,6 +562,13 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.Checkbox(Resources.Incoming_ShowOutgoing, ref showOutgoing))
         {
             _configuration.ShowOutgoingMessages = showOutgoing;
+            _configuration.Save();
+        }
+        
+        var printIncomingToChat = _configuration.PrintIncomingToChat;
+        if (ImGui.Checkbox("Print translations to local in-game chat", ref printIncomingToChat))
+        {
+            _configuration.PrintIncomingToChat = printIncomingToChat;
             _configuration.Save();
         }
         

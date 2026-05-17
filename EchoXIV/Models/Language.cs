@@ -79,7 +79,8 @@ namespace EchoXIV.Models
                 new() { Code = "pt", Name = "Português", Flag = "🇵🇹" },
                 new() { Code = "ru", Name = "Русский", Flag = "🇷🇺" },
                 new() { Code = "zh-CN", Name = "中文(简体)", Flag = "🇨🇳" },
-                new() { Code = "zh-TW", Name = "中文(繁體)", Flag = "🇹🇼" }
+                new() { Code = "zh-TW", Name = "中文(繁體)", Flag = "🇹🇼" },
+                new() { Code = "th", Name = "ไทย", Flag = "🇹🇭" }
             };
         }
     }

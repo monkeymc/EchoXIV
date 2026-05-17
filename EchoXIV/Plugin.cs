@@ -44,6 +44,8 @@ namespace EchoXIV
         private ITranslationService _translatorService = null!;
         private GoogleTranslatorService _googleTranslator = null!;
         private PapagoTranslatorService _papagoTranslator = null!;
+        private GeminiTranslatorService _geminiTranslator = null!;
+        private AutoTranslationService _autoTranslator = null!;
         private GlossaryService _glossaryService = null!;
         private TranslationCache _translationCache = null!;
         private WindowSystem _windowSystem = null!;
@@ -89,6 +91,8 @@ namespace EchoXIV
                 // Inicializar motores de traducción
                 _googleTranslator = new GoogleTranslatorService();
                 _papagoTranslator = new PapagoTranslatorService(_configuration);
+                _geminiTranslator = new GeminiTranslatorService(_configuration);
+                _autoTranslator = new AutoTranslationService(_googleTranslator, _papagoTranslator, _geminiTranslator, _configuration);
 
                 // Inicializar servicio de traducción
                 UpdateTranslationService();
@@ -343,6 +347,7 @@ namespace EchoXIV
 
             // Detener motores de traducción
             _googleTranslator?.Dispose();
+            _geminiTranslator?.Dispose();
             // _papagoTranslator no es IDisposable actualmente, pero lo manejamos por si acaso
             if (_papagoTranslator is IDisposable papagoDisp) papagoDisp.Dispose();
 
@@ -492,6 +497,39 @@ namespace EchoXIV
                 return;
             }
 
+            // Check if user is trying to switch target language directly
+            var langArg = lowerArgs;
+            if (lowerArgs.StartsWith("lang ") || lowerArgs.StartsWith("to "))
+            {
+                var spaceIndex = lowerArgs.IndexOf(' ');
+                langArg = lowerArgs.Substring(spaceIndex + 1).Trim();
+            }
+
+            var targetLang = langArg switch
+            {
+                "ja" or "jp" or "japanese" => "ja",
+                "en" or "english" => "en",
+                "zh" or "cn" or "zh-cn" or "chinese" => "zh-CN",
+                "tw" or "zh-tw" => "zh-TW",
+                "ko" or "korean" => "ko",
+                "es" or "spanish" => "es",
+                "fr" or "french" => "fr",
+                "de" or "german" => "de",
+                "it" or "italian" => "it",
+                "pt" or "portuguese" => "pt",
+                "ru" or "russian" => "ru",
+                "no" or "norwegian" => "no",
+                _ => null
+            };
+
+            if (targetLang != null)
+            {
+                _configuration.TargetLanguage = targetLang;
+                _configuration.Save();
+                ChatGui.Print($"[EchoXIV] Target language changed to: {targetLang.ToUpperInvariant()}");
+                return;
+            }
+
             switch (lowerArgs)
             {
                 case "on":
@@ -535,6 +573,7 @@ namespace EchoXIV
                     ChatGui.Print(GetResourceText("Command_HelpHeader", "Available commands:"));
                     ChatGui.Print(GetResourceText("Command_HelpTranslateLine", "/translate <message> - Translate to the active channel."));
                     ChatGui.Print(GetResourceText("Command_HelpToggleLine", "/translate on/off - Toggle automatic translation."));
+                    ChatGui.Print("/translate <language> - Quickly switch outgoing translation language (e.g., /tl ja, /tl en).");
                     ChatGui.Print(GetResourceText("Command_HelpConfigLine", "/translate config - Open settings."));
                     ChatGui.Print(GetResourceText("Command_HelpChatLine", "/translate chat - Show or hide the translated chat window."));
                     ChatGui.Print(GetResourceText("Command_HelpResetLine", "/translate reset - Reset the translated chat window position."));
@@ -615,13 +654,61 @@ namespace EchoXIV
                         return;
                     }
 
-                    using var timeout = TranslationDefaults.CreateTimeoutTokenSource();
-                    var translated = await _translatorService.TranslateAsync(
-                        message,
-                        "auto",
-                        _configuration.TargetLanguage,
-                        timeout.Token
-                    );
+                    var actualEngine = _translatorService.Name;
+                    if (actualEngine == "Auto")
+                    {
+                        if (!string.IsNullOrWhiteSpace(_configuration.GeminiApiKey))
+                        {
+                            actualEngine = "Gemini";
+                        }
+                        else
+                        {
+                            var cleanLang = _configuration.TargetLanguage.Split('-')[0].ToLowerInvariant();
+                            var papagoPreferred = new System.Collections.Generic.HashSet<string> { "ja", "ko", "zh", "th" };
+                            actualEngine = papagoPreferred.Contains(cleanLang) ? "Papago" : "Google";
+                        }
+                    }
+
+                    string translated;
+                    try
+                    {
+                        using var timeout = TranslationDefaults.CreateTimeoutTokenSource();
+                        translated = await _translatorService.TranslateAsync(
+                            message,
+                            "auto",
+                            _configuration.TargetLanguage,
+                            timeout.Token
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_configuration.SelectedEngine != TranslationEngine.Google && _googleTranslator != null)
+                        {
+                            PluginLog.Warning(ex, $"Primary translation engine ({_configuration.SelectedEngine}) failed. Attempting auto-fallback to Google...");
+                            actualEngine = "Google";
+                            using var fallbackTimeout = TranslationDefaults.CreateTimeoutTokenSource();
+                            translated = await _googleTranslator.TranslateAsync(
+                                message,
+                                "auto",
+                                _configuration.TargetLanguage,
+                                fallbackTimeout.Token
+                            );
+                        }
+                        else
+                        {
+                            throw;
+                        }
+                    }
+                    
+                    if (ContainsThai(translated))
+                    {
+                        _ = Framework.RunOnFrameworkThread(() =>
+                        {
+                            ChatGui.PrintError(GetResourceText("Command_SafetyBlock", "[EchoXIV] Outgoing message blocked for safety because it contains Thai characters."));
+                            PluginLog.Warning($"Blocked outgoing message translation because it contains Thai characters. Original: '{message}', Translated: '{translated}'");
+                        });
+                        return;
+                    }
                     
                     // Enviar en main thread
                     _ = Framework.RunOnFrameworkThread(() =>
@@ -640,7 +727,8 @@ namespace EchoXIV
                             Sender = PlayerState.CharacterName.ToString(),
                             OriginalText = message, // Tooltip
                             TranslatedText = translated, // Texto principal
-                            IsTranslating = false
+                            IsTranslating = false,
+                            EngineName = actualEngine
                         });
                         
                         PluginLog.Info($"Translated and sent [{type}]: '{message}' -> '{translated}'");
@@ -648,12 +736,19 @@ namespace EchoXIV
                 }
                 catch (OperationCanceledException ex)
                 {
-                    PluginLog.Warning(ex, "Manual translation timed out. Sending original message instead.");
+                    PluginLog.Warning(ex, "Manual translation timed out.");
                     _ = Framework.RunOnFrameworkThread(() =>
                     {
                         var (prefix, message, type, recipient) = ParseChannelAndMessage(input);
                         if (string.IsNullOrWhiteSpace(message))
                         {
+                            return;
+                        }
+
+                        if (ContainsThai(message))
+                        {
+                            ChatGui.PrintError(GetResourceText("Command_TimeoutBlock", "[EchoXIV] Translation timed out. Outgoing message blocked for safety because it contains Thai characters."));
+                            PluginLog.Warning($"Blocked outgoing message on timeout because it contains Thai characters. Message: '{message}'");
                             return;
                         }
 
@@ -666,7 +761,8 @@ namespace EchoXIV
                             Sender = PlayerState.CharacterName.ToString(),
                             OriginalText = message,
                             TranslatedText = message,
-                            IsTranslating = false
+                            IsTranslating = false,
+                            EngineName = "Timeout"
                         });
                     });
                 }
@@ -689,6 +785,12 @@ namespace EchoXIV
                     });
                 }
             });
+        }
+
+        private bool ContainsThai(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            return Regex.IsMatch(text, @"[\u0E00-\u0E7F]");
         }
 
         private unsafe (string? prefix, string message, XivChatType type, string recipient) ParseChannelAndMessage(string input)
@@ -957,6 +1059,14 @@ namespace EchoXIV
                 case TranslationEngine.Papago:
                     _translatorService = _papagoTranslator;
                     if (_configuration.VerboseLogging) PluginLog.Info("Translation engine changed to: Papago (Naver)");
+                    break;
+                case TranslationEngine.Gemini:
+                    _translatorService = _geminiTranslator;
+                    if (_configuration.VerboseLogging) PluginLog.Info("Translation engine changed to: Gemini");
+                    break;
+                case TranslationEngine.Auto:
+                    _translatorService = _autoTranslator;
+                    if (_configuration.VerboseLogging) PluginLog.Info("Translation engine changed to: Auto");
                     break;
                 case TranslationEngine.Google:
                 default:

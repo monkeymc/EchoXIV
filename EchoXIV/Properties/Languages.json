@@ -11,6 +11,7 @@
     { "code": "ru", "name": "Русский", "flag": "🇷🇺" },
     { "code": "zh-CN", "name": "中文", "flag": "🇨🇳" },
     { "code": "zh-TW", "name": "繁體中文", "flag": "🇹🇼" },
-    { "code": "ko", "name": "한국어", "flag": "🇰🇷" }
+    { "code": "ko", "name": "한국어", "flag": "🇰🇷" },
+    { "code": "th", "name": "ไทย", "flag": "🇹🇭" }
   ]
 }

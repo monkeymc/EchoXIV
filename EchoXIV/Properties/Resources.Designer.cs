@@ -168,6 +168,7 @@ namespace EchoXIV.Properties {
         public static string Lang_ZH_Trad { get { return GetString("Lang_ZH_Trad"); } }
         public static string Lang_RU { get { return GetString("Lang_RU"); } }
         public static string Lang_IT { get { return GetString("Lang_IT"); } }
+        public static string Lang_TH { get { return GetString("Lang_TH"); } }
         public static string Channel_Say { get { return GetString("Channel_Say"); } }
         public static string Channel_Shout { get { return GetString("Channel_Shout"); } }
         public static string Channel_Yell { get { return GetString("Channel_Yell"); } }

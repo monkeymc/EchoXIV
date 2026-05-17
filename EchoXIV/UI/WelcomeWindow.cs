@@ -33,11 +33,12 @@ public class WelcomeWindow : Window
         ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), Resources.Welcome_SourceTip);
         ImGui.SetNextItemWidth(-1);
         
-        var languages = new[] { "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW" };
+        var languages = new[] { "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW", "th" };
         var languageNames = new[] { 
             Resources.Lang_ES, Resources.Lang_EN, Resources.Lang_JA, Resources.Lang_FR, 
             Resources.Lang_DE, Resources.Lang_IT, Resources.Lang_KO, Resources.Lang_NO,
-            Resources.Lang_PT, Resources.Lang_RU, Resources.Lang_ZH_Simp, Resources.Lang_ZH_Trad
+            Resources.Lang_PT, Resources.Lang_RU, Resources.Lang_ZH_Simp, Resources.Lang_ZH_Trad,
+            Resources.Lang_TH
         };
         
         var currentSourceIdx = Array.IndexOf(languages, _configuration.SourceLanguage);
@@ -55,12 +56,19 @@ public class WelcomeWindow : Window
         ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), Resources.Welcome_TargetTip);
         ImGui.SetNextItemWidth(-1);
         
-        var currentTargetIdx = Array.IndexOf(languages, _configuration.TargetLanguage);
+        var targetLanguages = new[] { "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW" };
+        var targetLanguageNames = new[] { 
+            Resources.Lang_ES, Resources.Lang_EN, Resources.Lang_JA, Resources.Lang_FR, 
+            Resources.Lang_DE, Resources.Lang_IT, Resources.Lang_KO, Resources.Lang_NO,
+            Resources.Lang_PT, Resources.Lang_RU, Resources.Lang_ZH_Simp, Resources.Lang_ZH_Trad
+        };
+        
+        var currentTargetIdx = Array.IndexOf(targetLanguages, _configuration.TargetLanguage);
         if (currentTargetIdx == -1) currentTargetIdx = 1;
         
-        if (ImGui.Combo("##WelcomeTargetLang", ref currentTargetIdx, languageNames, languageNames.Length))
+        if (ImGui.Combo("##WelcomeTargetLang", ref currentTargetIdx, targetLanguageNames, targetLanguageNames.Length))
         {
-            _configuration.TargetLanguage = languages[currentTargetIdx];
+            _configuration.TargetLanguage = targetLanguages[currentTargetIdx];
         }
 
         ImGui.Spacing();
@@ -71,12 +79,12 @@ public class WelcomeWindow : Window
         ImGui.Text(Resources.Welcome_ReadQuestion);
         ImGui.SetNextItemWidth(-1);
 
-        var incomingLangs = new[] { "", "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW" };
+        var incomingLangs = new[] { "", "es", "en", "ja", "fr", "de", "it", "ko", "no", "pt", "ru", "zh-CN", "zh-TW", "th" };
         var incomingLangNames = new[] { 
             Resources.Incoming_UseWritingLanguage, Resources.Lang_ES, Resources.Lang_EN, Resources.Lang_JA, 
             Resources.Lang_FR, Resources.Lang_DE, Resources.Lang_IT, Resources.Lang_KO,
             Resources.Lang_NO, Resources.Lang_PT, Resources.Lang_RU, Resources.Lang_ZH_Simp,
-            Resources.Lang_ZH_Trad
+            Resources.Lang_ZH_Trad, Resources.Lang_TH
         };
 
         var currentIncIdx = Array.IndexOf(incomingLangs, _configuration.IncomingTargetLanguage);

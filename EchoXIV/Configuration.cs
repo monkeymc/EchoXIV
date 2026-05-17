@@ -10,8 +10,10 @@ namespace EchoXIV
     /// </summary>
     public enum TranslationEngine
     {
+        Auto,
         Google,
-        Papago
+        Papago,
+        Gemini
     }
 
     [Serializable]
@@ -57,6 +59,11 @@ namespace EchoXIV
         public bool IncomingTranslationEnabled { get; set; } = true;
         
         /// <summary>
+        /// Habilitar la impresión de mensajes traducidos en el chat local del juego
+        /// </summary>
+        public bool PrintIncomingToChat { get; set; } = true;
+        
+        /// <summary>
         /// Máximo de mensajes a mostrar en la ventana de traducciones
         /// </summary>
         public int MaxDisplayedMessages { get; set; } = 50;
@@ -87,8 +94,9 @@ namespace EchoXIV
         public int ChatMessageSpacing { get; set; } = 0;
         public string TimestampFormat { get; set; } = "HH:mm"; // "HH:mm:ss", "Short"
 
-        public TranslationEngine SelectedEngine { get; set; } = TranslationEngine.Papago;
+        public TranslationEngine SelectedEngine { get; set; } = TranslationEngine.Auto;
         public string PapagoVersionKey { get; set; } = Constants.DefaultPapagoVersionKey;
+        public string GeminiApiKey { get; set; } = string.Empty;
         public bool VerboseLogging { get; set; } = false; // Logs detallados (off por defecto)
         public bool OverlayVisible { get; set; } = true;
 
@@ -128,7 +136,7 @@ namespace EchoXIV
                 changed = true;
             }
 
-            if (string.IsNullOrWhiteSpace(TargetLanguage))
+            if (string.IsNullOrWhiteSpace(TargetLanguage) || TargetLanguage == "th")
             {
                 TargetLanguage = "en";
                 changed = true;
@@ -143,6 +151,12 @@ namespace EchoXIV
             if (string.IsNullOrWhiteSpace(PapagoVersionKey))
             {
                 PapagoVersionKey = Constants.DefaultPapagoVersionKey;
+                changed = true;
+            }
+
+            if (GeminiApiKey == null)
+            {
+                GeminiApiKey = string.Empty;
                 changed = true;
             }
 
